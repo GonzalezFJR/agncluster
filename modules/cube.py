@@ -88,7 +88,7 @@ class cube:
     def cut_data(self):
         ''' Cut the datacube to a smaller region and a smaller wavelength range '''
         xx = np.where((self.wavelength < self.lambda_to) & (self.wavelength > self.lambda_from))[0][-1]
-        datacube = self.data[:xx, self.xfrom:self.xto, self.yfrom:self.yto]
+        datacube = self.data[:xx, self.yfrom:self.yto, self.xfrom:self.xto]
 
         # Cut the wavelength array to match the datacube
         self.lambdas = self.wavelength[:xx]

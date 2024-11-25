@@ -11,6 +11,43 @@ def spectra_similarity(spectra1, spectra2):
     spectra2 = spectra2[mask]
     return np.sum((spectra1 - spectra2)**2)
 
+def spectra_similarity_corr(spectrum1, spectrum2, N=10):
+    spectrum1 = np.array(spectrum1)
+    spectrum2 = np.array(spectrum2)
+    mask = np.logical_and(np.isfinite(spectrum1), np.isfinite(spectrum2))
+    spectrum1 = spectrum1[mask]
+    spectrum2 = spectrum2[mask]
+    L = len(spectrum1)
+    shifts = np.arange(-N, N + 1)
+    num_shifts = len(shifts)
+    
+    # Pad spectrum1 to accommodate shifts without changing length
+    padded_spectrum1 = np.pad(spectrum1, (N, N), mode='constant', constant_values=0)
+    
+    # Generate indices for shifted versions of spectrum1
+    idx_shifts = shifts + N  # Adjust shifts due to padding
+    indices = idx_shifts[:, None] + np.arange(L)
+    
+    # Create shifted versions of spectrum1
+    shifted_spectrum1 = padded_spectrum1[indices]
+    
+    # Create mask to exclude comparisons with zero-padded elements
+    col_indices = np.arange(L)
+    shift_matrix = shifts[:, None]
+    mask = np.where(shift_matrix >= 0,
+                    col_indices >= shift_matrix,
+                    col_indices < L + shift_matrix)
+    
+    # Compute differences and apply mask
+    diffs = shifted_spectrum1 - spectrum2
+    diffs[~mask] = 0  # Zero out non-overlapping regions
+    
+    # Compute SSD for each shift
+    ssd = np.sum(diffs ** 2, axis=1)
+    
+    # Return the minimum SSD
+    return np.min(ssd)
+
 class hcluster:
 
     def __init__(self, cube, metric=None, n=12):
