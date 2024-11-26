@@ -85,9 +85,6 @@ class hcluster:
         self.distances = pdist(self.get_data(), metric=self.metric)
 
     def compute_clusters(self, n=None, cluster_singletons=2, distances=None, other_indices=None):
-        import numpy as np
-        from scipy.cluster.hierarchy import linkage, fcluster
-        from scipy.spatial.distance import squareform
 
         if distances is None:
             distances = self.distances
@@ -147,7 +144,7 @@ class hcluster:
         # Check if new singletons were found
         if len(singleton_labels) > 0 and len(non_singleton_current_indices) > 0:
             # Reduce 'n' to avoid requesting more clusters than data points
-            n_new = min(self.n, len(non_singleton_current_indices))
+            n_new = min(n, len(non_singleton_current_indices))
             # Remove singleton data and recurse
             self.compute_clusters(n=n_new, cluster_singletons=cluster_singletons,
                                 distances=None, other_indices=other_indices)
