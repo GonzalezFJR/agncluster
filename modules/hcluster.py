@@ -1,5 +1,5 @@
 import numpy as np
-from scipy.spatial.distance import pdist
+from scipy.spatial.distance import pdist, squareform
 from scipy.cluster.hierarchy import fcluster, linkage, dendrogram
 
 def spectra_similarity(spectra1, spectra2):
@@ -84,17 +84,119 @@ class hcluster:
     def compute_distances(self):
         self.distances = pdist(self.get_data(), metric=self.metric)
 
-    def compute_linkage(self):
-        self.linkage = linkage(self.distances, method='ward')
+    def compute_clusters(self, n=None, cluster_singletons=2, distances=None, other_indices=None):
+        import numpy as np
+        from scipy.cluster.hierarchy import linkage, fcluster
+        from scipy.spatial.distance import squareform
 
-    def compute_clusters(self, n=None):
-        if n is not None:
-            self.set_clusters(n)
+        if distances is None:
+            distances = self.distances
+        if n is None:
+            n = self.n  # Assuming self.n is set elsewhere
+        if other_indices is None:
+            other_indices = np.array([], dtype=int)
+
+        # Total number of data points
+        N_total = int((1 + np.sqrt(1 + 8 * len(self.distances))) / 2)
+
+        # Determine the indices of the data points currently being clustered
+        if len(other_indices) == 0:
+            current_indices = np.arange(N_total)
+        else:
+            current_indices = np.setdiff1d(np.arange(N_total), other_indices)
+
+        # If only one data point remains, assign it and return
+        if len(current_indices) <= 1:
+            cluster_labels_full = np.full(N_total, -1)
+            if len(current_indices) == 1:
+                cluster_labels_full[current_indices] = 0
+            # Assign singleton indices to a new cluster label
+            singleton_cluster_label = 1
+            cluster_labels_full[other_indices] = singleton_cluster_label
+            # Map labels to consecutive integers starting from 0
+            unique_labels = np.unique(cluster_labels_full)
+            self.cluster_labels = np.searchsorted(unique_labels, cluster_labels_full)
+            self.linkage = None  # No linkage possible with one data point
+            return
+
+        # If distances do not correspond to current_indices, recompute distances
+        num_points = len(current_indices)
+        expected_condensed_size = num_points * (num_points - 1) // 2
+        if len(distances) != expected_condensed_size:
+            # Recompute distances for current_indices
+            full_distance_matrix = squareform(self.distances)
+            distance_matrix_current = full_distance_matrix[np.ix_(current_indices, current_indices)]
+            distances = squareform(distance_matrix_current)
+
+        # Compute the clustering
+        linkage_matrix = linkage(distances, method='ward')
+        cluster_labels = fcluster(linkage_matrix, n, criterion='maxclust')
+
+        # Identify singleton clusters
+        unique_labels, counts = np.unique(cluster_labels, return_counts=True)
+        singleton_labels = unique_labels[counts <= cluster_singletons]
+
+        # Get indices of singleton and non-singleton clusters
+        singleton_mask = np.isin(cluster_labels, singleton_labels)
+        singleton_current_indices = current_indices[singleton_mask]
+        non_singleton_current_indices = current_indices[~singleton_mask]
+
+        # Update 'other_indices' with new singleton indices
+        other_indices = np.concatenate([other_indices, singleton_current_indices])
+
+        # Check if new singletons were found
+        if len(singleton_labels) > 0 and len(non_singleton_current_indices) > 0:
+            # Reduce 'n' to avoid requesting more clusters than data points
+            n_new = min(self.n, len(non_singleton_current_indices))
+            # Remove singleton data and recurse
+            self.compute_clusters(n=n_new, cluster_singletons=cluster_singletons,
+                                distances=None, other_indices=other_indices)
+        else:
+            # Assemble the final cluster labels
+            cluster_labels_full = np.full(N_total, -1)
+            if len(non_singleton_current_indices) > 0:
+                # Map non-singleton cluster labels back to original indices
+                cluster_labels_full[non_singleton_current_indices] = cluster_labels[~singleton_mask]
+                max_label = cluster_labels[~singleton_mask].max()
+            else:
+                max_label = 0
+            # Assign singleton indices to a new cluster label
+            singleton_cluster_label = max_label + 1
+            cluster_labels_full[other_indices.astype(int)] = singleton_cluster_label
+            # Map labels to consecutive integers starting from 0
+            unique_labels = np.unique(cluster_labels_full)
+            self.cluster_labels = np.searchsorted(unique_labels, cluster_labels_full)
+            # Update the linkage matrix
+            self.linkage = linkage_matrix if len(non_singleton_current_indices) > 1 else None
+            return
+
+
+        '''
+        print(f'Shape of distances: {self.distances.shape}')
+
+        self.linkage = linkage(distances, method='ward')
         self.cluster_labels = fcluster(self.linkage, self.n, criterion='maxclust')
+
+        unique_labels, counts = np.unique(self.cluster_labels, return_counts=True)
+        singleton_labels = unique_labels[counts <= cluster_singletons]
+
+        if len(singleton_labels) > 0:
+            # Assign a new cluster label for anomalies
+            anomaly_label = -1
+            for label in singleton_labels:
+                self.cluster_labels[self.cluster_labels == label] = anomaly_label
+            # rename cluster labels to be consecutive -- remove labels in singleton_labels
+            unique_labels = np.unique(self.cluster_labels)
+            # sort
+            unique_labels = np.sort(unique_labels)
+            for i, label in enumerate(unique_labels):
+                self.cluster_labels[self.cluster_labels == label] = i
+
+        print(f'Shape of cluster labels: {self.cluster_labels.shape}')
+        '''
 
     def compute(self, n=None):
         self.compute_distances()
-        self.compute_linkage()
         self.compute_clusters(n)
 
     def get_clusters(self, matrix=False):
