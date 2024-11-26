@@ -65,9 +65,24 @@ class hcluster:
         self.metric = metric
         if self.metric is None:
             self.metric = spectra_similarity
-    
+
+    def get_data(self, masked=True):
+        mask1d = self.cube.cube_mask.reshape(-1)
+        return  self.data[mask1d] if masked else self.data
+
+    def reshape(self, data1d, unmask=True):
+        if unmask:
+            mask1d = self.cube.cube_mask.reshape(-1)
+            #data2d = np.zeros(mask1d.shape)
+            # nans array
+            data2d = np.full(mask1d.shape, np.nan)
+            data2d[mask1d] = data1d
+        else:
+            data2d = data1d
+        return data2d.reshape(self.shape[1:])
+
     def compute_distances(self):
-        self.distances = pdist(self.data, metric=self.metric)
+        self.distances = pdist(self.get_data(), metric=self.metric)
 
     def compute_linkage(self):
         self.linkage = linkage(self.distances, method='ward')
@@ -83,7 +98,7 @@ class hcluster:
         self.compute_clusters(n)
 
     def get_clusters(self, matrix=False):
-        return self.cluster_labels if not matrix else self.cluster_labels.reshape(self.shape[1:])
+        return self.cluster_labels if not matrix else self.reshape(self.cluster_labels)
 
     def compare(self, x1, y1, x2, y2):
         ''' Compare two pixels '''

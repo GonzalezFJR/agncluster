@@ -35,8 +35,9 @@ class cube:
         wavelength = eval(self.wavelength_command)
         self.data = data
         self.wavelength = wavelength
-        self.remove_nans()
-    
+        self.mask = ~((np.isnan(data).any(axis=0)) | (data == 0).any(axis=0))
+        #self.remove_nans()
+
     def remove_nans(self):
         ''' Extrapolate with values in the wavelength axis '''
         zz, yy, xx = self.data.shape
@@ -93,6 +94,7 @@ class cube:
         # Cut the wavelength array to match the datacube
         self.lambdas = self.wavelength[:xx]
         self.cube = datacube
+        self.cube_mask = self.mask[self.yfrom:self.yto, self.xfrom:self.xto]
 
     def continuum(self, x, y):
         ''' Get the continuum for a given pixel '''
@@ -113,9 +115,9 @@ class cube:
 
     def get_mask(self):
         ''' Mask for x,y pixels that are empty '''
-        mask = np.all(self.cube == 0, axis=0)
+        mask = np.all(self.data == 0, axis=0)
         # add pixels where more than 50% of the values are 0
-        mask = mask | (np.sum(self.cube == 0, axis=0) > 0.5 * self.cube.shape[0])
+        mask = mask | (np.sum(self.data == 0, axis=0) > 0.5 * self.data.shape[0])
         return mask
 
 
