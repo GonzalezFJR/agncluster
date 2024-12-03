@@ -50,9 +50,9 @@ def spectra_similarity_corr(spectrum1, spectrum2, N=10):
 
 class hcluster:
 
-    def __init__(self, cube, metric=None, n=12):
+    def __init__(self, cube, metric=None, n=12, normalize=True):
         self.cube = cube # cube object
-        self.data = cube.get_cube(normalize=True)
+        self.data = cube.get_cube(normalize=normalize)
         self.shape = self.data.shape
         self.data = self.data.reshape(self.shape[0], -1).T
         self.set_clusters(n) # number of clusters
@@ -181,6 +181,16 @@ class hcluster:
         spectrum2 = self.cube.get_spectrum(x2, y2)
         metric = self.metric(spectrum1, spectrum2)
         return lambdas, spectrum1, spectrum2, metric
+    
+    def merge_clusters(self, cluster1, cluster2, out=None):
+        ''' Merge two clusters '''
+        if out is None:
+            out = cluster1
+        mask1 = self.cluster_labels == cluster1
+        mask2 = self.cluster_labels == cluster2
+        self.cluster_labels[mask1] = out
+        self.cluster_labels[mask2] = out
+        return
 
     def get_spectra_in_cluster(self, cluster):
         ''' Get the spectra in a cluster '''
@@ -211,3 +221,8 @@ class hcluster:
         spectra_ordered = spectra[order]
         median_spectrum = np.median(spectra_ordered, axis=0)
         return median_spectrum
+
+    def get_integrated_spectrum(self, cluster):
+        ''' Get the integrated spectrum in a cluster '''
+        spectra = self.get_spectra_in_cluster(cluster)
+        return np.sum(spectra, axis=0)
