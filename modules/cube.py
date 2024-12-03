@@ -6,7 +6,7 @@ from matplotlib.colors import LogNorm
 
 class cube:
 
-    def __init__(self, filename, wavelength_command=None):
+    def __init__(self, filename, wavelength_command=None, ext=1):
         self.filename = filename
 
         self.data = None # raw data
@@ -15,7 +15,7 @@ class cube:
         self.lambdas = None # wavelength array in Angstroms after cutting
 
         self.set_wavelength_command(wavelength_command)
-        self.load_data()
+        self.load_data(ext=ext)
 
     ### Load data
     ##################################################################
@@ -27,7 +27,7 @@ class cube:
         else:
             self.wavelength_command = wavelength_command
 
-    def load_data(self):
+    def load_data(self, ext=1):
         ''' Load the data and wavelength array from a fits file '''
         data = fits.getdata(self.filename, ext=1)
         header = fits.getheader(self.filename, ext=1)
