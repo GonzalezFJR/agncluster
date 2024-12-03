@@ -167,31 +167,6 @@ class hcluster:
             self.linkage = linkage_matrix if len(non_singleton_current_indices) > 1 else None
             return
 
-
-        '''
-        print(f'Shape of distances: {self.distances.shape}')
-
-        self.linkage = linkage(distances, method='ward')
-        self.cluster_labels = fcluster(self.linkage, self.n, criterion='maxclust')
-
-        unique_labels, counts = np.unique(self.cluster_labels, return_counts=True)
-        singleton_labels = unique_labels[counts <= cluster_singletons]
-
-        if len(singleton_labels) > 0:
-            # Assign a new cluster label for anomalies
-            anomaly_label = -1
-            for label in singleton_labels:
-                self.cluster_labels[self.cluster_labels == label] = anomaly_label
-            # rename cluster labels to be consecutive -- remove labels in singleton_labels
-            unique_labels = np.unique(self.cluster_labels)
-            # sort
-            unique_labels = np.sort(unique_labels)
-            for i, label in enumerate(unique_labels):
-                self.cluster_labels[self.cluster_labels == label] = i
-
-        print(f'Shape of cluster labels: {self.cluster_labels.shape}')
-        '''
-
     def compute(self, n=None):
         self.compute_distances()
         self.compute_clusters(n)
@@ -210,7 +185,7 @@ class hcluster:
     def get_spectra_in_cluster(self, cluster):
         ''' Get the spectra in a cluster '''
         mask = self.cluster_labels == cluster
-        return self.data[mask]
+        return self.get_data()[mask]
 
     def get_metrics_in_cluster(self, cluster):
         ''' Get the metrics in a cluster '''
