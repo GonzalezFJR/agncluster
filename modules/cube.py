@@ -3,6 +3,7 @@ from astropy.io import fits
 import numpy as np
 import matplotlib.pyplot as plt
 from matplotlib.colors import LogNorm
+import astropy.units as u
 
 class cube:
 
@@ -12,8 +13,8 @@ class cube:
         self.data = None # raw data
         self.cube = None # processed data
         self.wavelength = None # wavelength array in Angstroms
+        self.extent = None # physical extent of the dataset in arcsec
         self.lambdas = None # wavelength array in Angstroms after cutting
-
         self.set_wavelength_command(wavelength_command)
         self.load_data(ext=ext)
 
@@ -27,10 +28,22 @@ class cube:
         else:
             self.wavelength_command = wavelength_command
 
+    def set_extent_commmand(self, extent_command=None):
+        ''' Get the extent of the datacube from the header information'''
+        if extent_command is not None:
+            self.extent_command = "[header['CDELT1']*u.deg.to(u.arcsec)*header['NAXIS1'],header['CDELT2']*u.deg.to(u.arcsec)*header['NAXIS2']]"
+        else:
+            self.extent_command = extent_command
+
     def load_data(self, ext=1):
         ''' Load the data and wavelength array from a fits file '''
-        data = fits.getdata(self.filename, ext=1)
-        header = fits.getheader(self.filename, ext=1)
+        data = fits.getdata(self.filename, ext=ext)
+        header = fits.getheader(self.filename, ext=ext)
+        if ext == 1:
+            header0 = fits.getheader(self.filename, ext=0)
+            #extent = eval(self.extent_command("[header0['CDELT1']*u.deg.to(u.arcsec)*header0['NAXIS1'], header0['CDELT2']*u.deg.to(u.arcsec)*header0['NAXIS2']]"))
+        #else:
+            #extent = eval(self.extent_command)
         # Construct the wavelength array from the CD1_1, CRVAL1, and CRPIX1 keywords
         wavelength = eval(self.wavelength_command)
         self.data = data
@@ -107,7 +120,7 @@ class cube:
             for j in range(xx):
                 cont = self.continuum(i, j)
                 self.cube[:, i, j] = self.cube[:, i, j] / cont
-        
+
     def reset_cube(self):
         ''' Reset the cube to the original data '''
         self.cube = self.data
