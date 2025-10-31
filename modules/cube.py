@@ -1,20 +1,21 @@
 import os
 from astropy.io import fits
 import numpy as np
-import matplotlib.pyplot as plt
-from matplotlib.colors import LogNorm
 import astropy.units as u
 
 class cube:
 
-    def __init__(self, filename, wavelength_command=None, ext=1):
+    def __init__(self, filename, wavelength_command=None,ext=1):
         self.filename = filename
 
         self.data = None # raw data
         self.cube = None # processed data
+        self.header = None # header information
+        self.header0 = None # header information
+        self.extent = None # physical extent of the datacube in arcseconds
         self.wavelength = None # wavelength array in Angstroms
-        self.extent = None # physical extent of the dataset in arcsec
         self.lambdas = None # wavelength array in Angstroms after cutting
+
         self.set_wavelength_command(wavelength_command)
         self.load_data(ext=ext)
 
@@ -29,31 +30,39 @@ class cube:
             self.wavelength_command = wavelength_command
 
     def set_extent_commmand(self, extent_command=None):
-        ''' Get the extent of the datacube from the header information'''
+        ''' Get the extent of the datacube from the header information''' 
         if extent_command is not None:
-            self.extent_command = "[header['CDELT1']*u.deg.to(u.arcsec)*header['NAXIS1'],header['CDELT2']*u.deg.to(u.arcsec)*header['NAXIS2']]"
+            self.extent_command = "[header['CDELT1']*u.deg.to(u.arcsec)*header['NAXIS1']/2,-header['CDELT1']*u.deg.to(u.arcsec)*(header['NAXIS1']/2),-header['CDELT2']*u.deg.to(u.arcsec)*(header['NAXIS2']/2),header['CDELT2']*u.deg.to(u.arcsec)*(header['NAXIS2']/2)]"
         else:
             self.extent_command = extent_command
 
-    def load_data(self, ext=1):
+    def load_data(self,ext=1):
         ''' Load the data and wavelength array from a fits file '''
         data = fits.getdata(self.filename, ext=ext)
         header = fits.getheader(self.filename, ext=ext)
         if ext == 1:
             header0 = fits.getheader(self.filename, ext=0)
-            #extent = eval(self.extent_command("[header0['CDELT1']*u.deg.to(u.arcsec)*header0['NAXIS1'], header0['CDELT2']*u.deg.to(u.arcsec)*header0['NAXIS2']]"))
-        #else:
-            #extent = eval(self.extent_command)
+            self.header0 = header0
+        #    extent = eval(self.extent_command("[header0['CDELT1']*u.deg.to(u.arcsec)*header0['NAXIS1']/2,-header0['CDELT1']*u.deg.to(u.arcsec)*(header0['NAXIS1']/2),-header0['CDELT2']*u.deg.to(u.arcsec)*(header0['NAXIS2']/2),header0['CDELT2']*u.deg.to(u.arcsec)*(header0['NAXIS2']/2)]"))
+        #else: 
+        #    extent = eval(self.extent_command)
         # Construct the wavelength array from the CD1_1, CRVAL1, and CRPIX1 keywords
         wavelength = eval(self.wavelength_command)
         self.data = data
+        self.header = header
         self.wavelength = wavelength
-        self.mask = ~((np.isnan(data).any(axis=0)) | (data == 0).any(axis=0))
+        #self.extent = extent
         #self.remove_nans()
-
+        self.mask = ~((np.isnan(data).any(axis=0)) | (data == 0).any(axis=0))
+        print('[INFO]: Loaded datacube from', self.filename)
+        print('[INFO]: Wavelength range:', np.min(self.wavelength), np.max(self.wavelength))
+        print('[INFO]: Data shape:', self.data.shape)
+        print('[INFO]: Mask shape:', self.mask.shape)
+    
     def remove_nans(self):
         ''' Extrapolate with values in the wavelength axis '''
         zz, yy, xx = self.data.shape
+        print('Inital shape of the cube:', zz, yy, xx)
         for i in range(yy):
             for j in range(xx):
                 mask = np.isnan(self.data[:, i, j])
@@ -61,14 +70,16 @@ class cube:
                 if np.all(mask):
                     self.data[:, i, j] = 0
                 # if more than 50% of the values are nan, set them to 0 as well
-                elif np.sum(mask) > 0.5 * zz:
+                elif np.sum(mask) > 0.2 * zz:
                     self.data[:, i, j] = 0
                 else:
                     self.data[mask, i, j] = np.interp(np.flatnonzero(mask), np.flatnonzero(~mask), self.data[~mask, i, j])
 
+        print('Final shape of the cube:', self.data.shape)
+
+
     ### Process data
     ##################################################################
-
     def set_data_limits(self, xfrom=15, xto=300, yfrom=40, yto=320, lambda_from=0, lambda_to=8500, lambda_idx=True):
         ''' Set the data limits '''
         self.xfrom = xfrom
@@ -76,8 +87,9 @@ class cube:
         self.yfrom = yfrom
         self.yto = yto
         if lambda_idx:
-            self.lambda_from_idx = min(lambda_from, 0)
-            self.lambda_to_idx = min(max(lambda_to, len(self.wavelength)-1), len(self.wavelength)-1)
+            self.lambda_from_idx = max(lambda_from, 0)
+            self.lambda_to_idx = min(lambda_to, len(self.wavelength)-1)
+            #self.lambda_to_idx = min(max(lambda_to, len(self.wavelength)-1), len(self.wavelength)-1)
             self.lambda_from = self.wavelength[self.lambda_from_idx]
             self.lambda_to = self.wavelength[self.lambda_to_idx]
         else:
@@ -101,6 +113,7 @@ class cube:
 
     def cut_data(self):
         ''' Cut the datacube to a smaller region and a smaller wavelength range '''
+        print('Cutting the datacube to the region:', self.xfrom, self.xto, self.yfrom, self.yto)
         xx = np.where((self.wavelength < self.lambda_to) & (self.wavelength > self.lambda_from))[0][-1]
         datacube = self.data[:xx, self.yfrom:self.yto, self.xfrom:self.xto]
 
@@ -111,16 +124,29 @@ class cube:
 
     def continuum(self, x, y):
         ''' Get the continuum for a given pixel '''
-        return np.median(self.cube[self.continuum_from_idx:self.continuum_to_idx, x, y])
+        #return np.median(self.cube[self.continuum_from_idx:self.continuum_to_idx, x, y])
+        return np.median(self.data[self.continuum_from_idx:self.continuum_to_idx, x, y])
 
-    def normalize(self):
+    def normalize_cont(self):
         ''' Normalize the pixels in the datacube using continuum '''
         zz, yy, xx = self.cube.shape
+        print('Inital shape of the cube:', zz, yy, xx)
         for i in range(yy):
             for j in range(xx):
                 cont = self.continuum(i, j)
                 self.cube[:, i, j] = self.cube[:, i, j] / cont
-
+        print('Final shape of the cube:', self.cube.shape)
+    
+    def normalize_flux(self):
+        ''' Normalize the flux by integrating the total flux per pixel '''
+        zz, yy, xx = self.cube.shape
+        print('Inital shape of the cube:', zz, yy, xx)
+        total_flux = np.sum(self.cube, axis=0)  # Integrate total flux per pixel
+        print('Shape of total flux:', total_flux.shape)
+        total_flux[total_flux == 0] = 1  # Avoid division by zero
+        self.cube = self.cube / total_flux  # Normalize the cube
+        print('Final shape of the cube:', self.cube.shape)
+        
     def reset_cube(self):
         ''' Reset the cube to the original data '''
         self.cube = self.data
@@ -133,6 +159,14 @@ class cube:
         mask = mask | (np.sum(self.data == 0, axis=0) > 0.5 * self.data.shape[0])
         return mask
 
+    def subtract_continuum(self):
+        ''' Subtract the continuum from the datacube '''
+        zz, yy, xx = self.cube.shape
+        for i in range(yy):
+            for j in range(xx):
+                # the continuum would be the median of the flux in the first 10 pixels
+                cont = np.median(self.cube[0:20, i, j])
+                self.cube[:, i, j] = self.cube[:, i, j] - cont
 
     ### Get data
     ##################################################################
@@ -154,9 +188,13 @@ class cube:
         ''' Get the wavelength array for a given pixel '''
         return self.cube[:, y, x] if processed else self.data[:, y, x]
 
-    def get_cube(self, normalize=False):
+    def get_cube(self, normalize_flux=False, normalize_cont=False, subtract=False):
         ''' Get the datacube '''
         self.reset_cube()
-        if normalize:
-            self.normalize()
+        if subtract:
+            self.subtract_continuum()
+        if normalize_cont:
+            self.normalize_cont()
+        if normalize_flux:
+            self.normalize_flux()
         return self.cube

@@ -12,6 +12,19 @@ def spectra_similarity(spectra1, spectra2):
     return np.sum((spectra1 - spectra2)**2)
 
 def spectra_similarity_corr(spectrum1, spectrum2, N=10):
+    """
+    Calculate the similarity between two spectra using the sum of squared differences (SSD)
+    for various shifts of the first spectrum.
+
+    Parameters:
+    spectrum1 (array-like): The first spectrum to compare.
+    spectrum2 (array-like): The second spectrum to compare.
+    N (int): The maximum number of shifts to apply to spectrum1 (default is 10).
+
+    Returns:
+    float: The minimum sum of squared differences (SSD) between the shifted versions of 
+        spectrum1 and spectrum2.
+    """
     spectrum1 = np.array(spectrum1)
     spectrum2 = np.array(spectrum2)
     mask = np.logical_and(np.isfinite(spectrum1), np.isfinite(spectrum2))
@@ -35,8 +48,8 @@ def spectra_similarity_corr(spectrum1, spectrum2, N=10):
     col_indices = np.arange(L)
     shift_matrix = shifts[:, None]
     mask = np.where(shift_matrix >= 0,
-                    col_indices >= shift_matrix,
-                    col_indices < L + shift_matrix)
+              col_indices >= shift_matrix,
+              col_indices < L + shift_matrix)
     
     # Compute differences and apply mask
     diffs = shifted_spectrum1 - spectrum2
@@ -50,9 +63,9 @@ def spectra_similarity_corr(spectrum1, spectrum2, N=10):
 
 class hcluster:
 
-    def __init__(self, cube, metric=None, n=12, normalize=True):
+    def __init__(self, cube, metric=None, n=12, normalize_cont=True, normalize_flux=False, subtract=False):
         self.cube = cube # cube object
-        self.data = cube.get_cube(normalize=normalize)
+        self.data = cube.get_cube(normalize_cont=normalize_cont, subtract=subtract, normalize_flux=normalize_flux)
         self.shape = self.data.shape
         self.data = self.data.reshape(self.shape[0], -1).T
         self.set_clusters(n) # number of clusters
@@ -165,7 +178,35 @@ class hcluster:
             self.cluster_labels = np.searchsorted(unique_labels, cluster_labels_full)
             # Update the linkage matrix
             self.linkage = linkage_matrix if len(non_singleton_current_indices) > 1 else None
+
+            #print(f'Shape of cluster labels: {self.cluster_labels.shape}')
+
             return
+
+
+        '''
+        print(f'Shape of distances: {self.distances.shape}')
+
+        self.linkage = linkage(distances, method='ward')
+        self.cluster_labels = fcluster(self.linkage, self.n, criterion='maxclust')
+
+        unique_labels, counts = np.unique(self.cluster_labels, return_counts=True)
+        singleton_labels = unique_labels[counts <= cluster_singletons]
+
+        if len(singleton_labels) > 0:
+            # Assign a new cluster label for anomalies
+            anomaly_label = -1
+            for label in singleton_labels:
+                self.cluster_labels[self.cluster_labels == label] = anomaly_label
+            # rename cluster labels to be consecutive -- remove labels in singleton_labels
+            unique_labels = np.unique(self.cluster_labels)
+            # sort
+            unique_labels = np.sort(unique_labels)
+            for i, label in enumerate(unique_labels):
+                self.cluster_labels[self.cluster_labels == label] = i
+
+        print(f'Shape of cluster labels: {self.cluster_labels.shape}')
+        '''
 
     def compute(self, n=None):
         self.compute_distances()
@@ -181,7 +222,7 @@ class hcluster:
         spectrum2 = self.cube.get_spectrum(x2, y2)
         metric = self.metric(spectrum1, spectrum2)
         return lambdas, spectrum1, spectrum2, metric
-    
+
     def merge_clusters(self, cluster1, cluster2, out=None):
         ''' Merge two clusters '''
         if out is None:
@@ -190,7 +231,17 @@ class hcluster:
         mask2 = self.cluster_labels == cluster2
         self.cluster_labels[mask1] = out
         self.cluster_labels[mask2] = out
-        return
+        return 
+
+    def estimate_silhouette(self, n):
+        ''' Find the minimum number of clusters to get the highest silhouette score '''
+        from sklearn.metrics import silhouette_score
+        # silhouette score
+        silhouette = []
+        for i in range(n):
+            self.compute(i)
+            silhouette.append(silhouette_score(self.get_data(), self.get_clusters()))
+        return silhouette
 
     def get_spectra_in_cluster(self, cluster):
         ''' Get the spectra in a cluster '''
@@ -221,8 +272,12 @@ class hcluster:
         spectra_ordered = spectra[order]
         median_spectrum = np.median(spectra_ordered, axis=0)
         return median_spectrum
+    
+    def get_cluster_size(self, cluster):
+        ''' Get the size of a cluster '''
+        return np.sum(self.cluster_labels == cluster)
 
-    def get_integrated_spectrum(self, cluster):
-        ''' Get the integrated spectrum in a cluster '''
+    def get_integrated_spectra(self, cluster):
+        ''' Get the integrated spectra in a cluster '''
         spectra = self.get_spectra_in_cluster(cluster)
         return np.sum(spectra, axis=0)
