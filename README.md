@@ -1,6 +1,8 @@
 # agncluster: Hierarchical clustering of galaxy datacubes
 
-This repository provides utilities to cluster galaxy integral-field spectroscopy datacubes using hierarchical clustering. The data are 3D cubes where each spatial pixel (spaxel) contains a spectrum. The workflow is:
+This repository provides utilities to cluster galaxy integral-field spectroscopy datacubes using hierarchical clustering. The method is described in https://arxiv.org/pdf/2509.14019.
+
+The data are 3D cubes where each spatial pixel (spaxel) contains a spectrum. The workflow is:
 
 - Load and prepare the datacube with `modules/cube.py`.
 - Compute pairwise spectral distances and perform hierarchical clustering with `modules/hcluster.py`.
