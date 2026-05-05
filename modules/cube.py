@@ -114,11 +114,16 @@ class cube:
     def cut_data(self):
         ''' Cut the datacube to a smaller region and a smaller wavelength range '''
         print('Cutting the datacube to the region:', self.xfrom, self.xto, self.yfrom, self.yto)
-        xx = np.where((self.wavelength < self.lambda_to) & (self.wavelength > self.lambda_from))[0][-1]
-        datacube = self.data[:xx, self.yfrom:self.yto, self.xfrom:self.xto]
+        valid_idx = np.where((self.wavelength < self.lambda_to) & (self.wavelength > self.lambda_from))[0]
+        if len(valid_idx) == 0:
+            raise ValueError('No wavelength channels found within the selected limits.')
+
+        start_idx = valid_idx[0]
+        stop_idx = valid_idx[-1] + 1
+        datacube = self.data[start_idx:stop_idx, self.yfrom:self.yto, self.xfrom:self.xto]
 
         # Cut the wavelength array to match the datacube
-        self.lambdas = self.wavelength[:xx]
+        self.lambdas = self.wavelength[start_idx:stop_idx]
         self.cube = datacube
         self.cube_mask = self.mask[self.yfrom:self.yto, self.xfrom:self.xto]
 
