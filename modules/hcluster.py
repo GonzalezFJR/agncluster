@@ -101,12 +101,15 @@ class hcluster:
 
         if distances is None:
             distances = self.distances
+        elif getattr(self, 'distances', None) is None:
+            # Allow passing precomputed distances without calling compute_distances first
+            self.distances = distances
         if n is None:
             n = self.n  # Assuming self.n is set elsewhere
         if other_indices is None:
             other_indices = np.array([], dtype=int)
 
-        # Total number of data points
+        # Total number of data points (self.distances always holds the full condensed matrix)
         N_total = int((1 + np.sqrt(1 + 8 * len(self.distances))) / 2)
 
         # Determine the indices of the data points currently being clustered
@@ -218,8 +221,9 @@ class hcluster:
     def compare(self, x1, y1, x2, y2):
         ''' Compare two pixels '''
         lambdas = self.cube.lambdas
-        spectrum1 = self.cube.get_spectrum(x1, y1)
-        spectrum2 = self.cube.get_spectrum(x2, y2)
+        # get_spectrum takes (y, x)
+        spectrum1 = self.cube.get_spectrum(y1, x1)
+        spectrum2 = self.cube.get_spectrum(y2, x2)
         metric = self.metric(spectrum1, spectrum2)
         return lambdas, spectrum1, spectrum2, metric
 
@@ -234,13 +238,24 @@ class hcluster:
         return 
 
     def estimate_silhouette(self, n):
-        ''' Find the minimum number of clusters to get the highest silhouette score '''
+        ''' Silhouette score for each number of clusters from 2 to n (inclusive).
+
+        Returns a list of scores for [2, 3, ..., n]. The distance matrix is
+        computed once and reused, and the score is evaluated with the same
+        metric used for the clustering (precomputed distances).
+        '''
         from sklearn.metrics import silhouette_score
-        # silhouette score
+        if getattr(self, 'distances', None) is None:
+            self.compute_distances()
+        distance_matrix = squareform(self.distances)
         silhouette = []
-        for i in range(n):
-            self.compute(i)
-            silhouette.append(silhouette_score(self.get_data(), self.get_clusters()))
+        for i in range(2, n + 1):
+            self.compute_clusters(i)
+            labels = self.get_clusters()
+            if len(np.unique(labels)) < 2:
+                silhouette.append(np.nan)
+            else:
+                silhouette.append(silhouette_score(distance_matrix, labels, metric='precomputed'))
         return silhouette
 
     def get_spectra_in_cluster(self, cluster):

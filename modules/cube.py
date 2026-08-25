@@ -30,8 +30,8 @@ class cube:
             self.wavelength_command = wavelength_command
 
     def set_extent_commmand(self, extent_command=None):
-        ''' Get the extent of the datacube from the header information''' 
-        if extent_command is not None:
+        ''' Get the extent of the datacube from the header information'''
+        if extent_command is None:
             self.extent_command = "[header['CDELT1']*u.deg.to(u.arcsec)*header['NAXIS1']/2,-header['CDELT1']*u.deg.to(u.arcsec)*(header['NAXIS1']/2),-header['CDELT2']*u.deg.to(u.arcsec)*(header['NAXIS2']/2),header['CDELT2']*u.deg.to(u.arcsec)*(header['NAXIS2']/2)]"
         else:
             self.extent_command = extent_command
@@ -80,23 +80,26 @@ class cube:
 
     ### Process data
     ##################################################################
-    def set_data_limits(self, xfrom=15, xto=300, yfrom=40, yto=320, lambda_from=0, lambda_to=8500, lambda_idx=True):
-        ''' Set the data limits '''
+    def set_data_limits(self, xfrom=0, xto=None, yfrom=0, yto=None, lambda_from=0, lambda_to=None, lambda_idx=True):
+        ''' Set the data limits. Defaults select the full cube. '''
         self.xfrom = xfrom
-        self.xto = xto
+        self.xto = self.data.shape[2] if xto is None else xto
         self.yfrom = yfrom
-        self.yto = yto
+        self.yto = self.data.shape[1] if yto is None else yto
         if lambda_idx:
+            if lambda_to is None:
+                lambda_to = len(self.wavelength) - 1
             self.lambda_from_idx = max(lambda_from, 0)
             self.lambda_to_idx = min(lambda_to, len(self.wavelength)-1)
-            #self.lambda_to_idx = min(max(lambda_to, len(self.wavelength)-1), len(self.wavelength)-1)
             self.lambda_from = self.wavelength[self.lambda_from_idx]
             self.lambda_to = self.wavelength[self.lambda_to_idx]
         else:
+            if lambda_to is None:
+                lambda_to = np.max(self.wavelength)
             self.lambda_from = lambda_from
             self.lambda_to = lambda_to
-            self.lambda_from_idx = np.where(self.wavelength > lambda_from)[0][0]
-            self.lambda_to_idx = np.where(self.wavelength < lambda_to)[0][-1]
+            self.lambda_from_idx = np.where(self.wavelength >= lambda_from)[0][0]
+            self.lambda_to_idx = np.where(self.wavelength <= lambda_to)[0][-1]
 
     def set_continuum_limits(self, lambda_from=0, lambda_to=8500, lambda_idx=True):
         ''' Set the continuum limits '''
@@ -114,23 +117,27 @@ class cube:
     def cut_data(self):
         ''' Cut the datacube to a smaller region and a smaller wavelength range '''
         print('Cutting the datacube to the region:', self.xfrom, self.xto, self.yfrom, self.yto)
-        valid_idx = np.where((self.wavelength < self.lambda_to) & (self.wavelength > self.lambda_from))[0]
+        valid_idx = np.where((self.wavelength <= self.lambda_to) & (self.wavelength >= self.lambda_from))[0]
         if len(valid_idx) == 0:
             raise ValueError('No wavelength channels found within the selected limits.')
 
         start_idx = valid_idx[0]
         stop_idx = valid_idx[-1] + 1
-        datacube = self.data[start_idx:stop_idx, self.yfrom:self.yto, self.xfrom:self.xto]
+        # Copy so that in-place processing (normalization, subtraction) never
+        # modifies the raw data through a shared view.
+        datacube = self.data[start_idx:stop_idx, self.yfrom:self.yto, self.xfrom:self.xto].copy()
 
         # Cut the wavelength array to match the datacube
         self.lambdas = self.wavelength[start_idx:stop_idx]
         self.cube = datacube
         self.cube_mask = self.mask[self.yfrom:self.yto, self.xfrom:self.xto]
 
-    def continuum(self, x, y):
-        ''' Get the continuum for a given pixel '''
-        #return np.median(self.cube[self.continuum_from_idx:self.continuum_to_idx, x, y])
-        return np.median(self.data[self.continuum_from_idx:self.continuum_to_idx, x, y])
+    def continuum(self, y, x):
+        ''' Get the continuum for a given pixel of the cut cube (y, x in cut coordinates) '''
+        # The continuum indices refer to the full wavelength array, so the raw
+        # data is used; the spatial coordinates of the cut cube are offset back
+        # to the raw frame.
+        return np.median(self.data[self.continuum_from_idx:self.continuum_to_idx, self.yfrom + y, self.xfrom + x])
 
     def normalize_cont(self):
         ''' Normalize the pixels in the datacube using continuum '''
@@ -178,9 +185,11 @@ class cube:
 
     def get_image(self, lambda_select, processed=True, log=True, mask=True, traspose=False):
         ''' Get an image at a given wavelength '''
-        data = self.data[lambda_select] if not processed else self.cube[lambda_select]
+        # Copy so the stored cube is never modified when masking or scaling.
+        data = (self.data[lambda_select] if not processed else self.cube[lambda_select]).copy()
         if mask and processed:
-            data[self.get_mask()] = 0
+            # cube_mask matches the spatial shape of the cut cube (True = valid pixel)
+            data[~self.cube_mask] = 0
         if traspose:
             data = data.T
         if log:
